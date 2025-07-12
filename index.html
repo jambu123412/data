@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Rekap Insentif Delivery</title>
+    <title>REKAP INSENTIF DELIVERY DC PKY 05</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -91,6 +91,20 @@
             padding: 20px;
             font-weight: bold;
         }
+        .data-count {
+            text-align: right;
+            margin-top: 10px;
+            color: #7f8c8d;
+        }
+        .refresh-btn {
+            background-color: #2ecc71;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
         @media (max-width: 768px) {
             .controls {
                 flex-direction: column;
@@ -117,13 +131,14 @@
             </div>
         </div>
         
-        <div id="loading">⏳ Memuat data dari Jambu...</div>
+        <div id="loading">⏳ Memuat data dari GitHub...</div>
         <div id="dataContainer"></div>
+        <button id="refreshBtn" class="refresh-btn" style="display: none;">🔄 Muat Ulang Data</button>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script>
-        // URL file Excel Anda di GitHub (RAW URL)
+        // URL file Excel di GitHub (RAW URL)
         const EXCEL_URL = "https://github.com/jambu123412/data/raw/main/REKAP%20INSENTIF%20DELIVERY%201-30%20JUNI%202025.xlsx";
         
         // Variabel global
@@ -135,10 +150,11 @@
         const searchInput = document.getElementById('searchInput');
         const dataContainer = document.getElementById('dataContainer');
         const loadingIndicator = document.getElementById('loading');
+        const refreshBtn = document.getElementById('refreshBtn');
         
         // Format angka ke Rupiah
         function formatRupiah(angka) {
-            if (!angka) return '-';
+            if (!angka || isNaN(angka)) return '-';
             return new Intl.NumberFormat('id-ID', {
                 style: 'currency',
                 currency: 'IDR',
@@ -149,11 +165,17 @@
         // Memuat file Excel dari GitHub
         async function loadExcel() {
             try {
-                loadingIndicator.textContent = "⏳ Memuat data dari Jambujua...";
+                loadingIndicator.style.display = 'block';
+                loadingIndicator.textContent = "⏳ Memuat data dari GitHub...";
+                dataContainer.innerHTML = '';
                 
-                // Fetch file Excel
-                const response = await fetch(EXCEL_URL);
-                if (!response.ok) throw new Error("Gagal mengambil file");
+                // Tambahkan timestamp untuk menghindari cache
+                const timestamp = new Date().getTime();
+                const response = await fetch(`${EXCEL_URL}?t=${timestamp}`);
+                
+                if (!response.ok) {
+                    throw new Error(`Gagal mengambil file (Status: ${response.status})`);
+                }
                 
                 const arrayBuffer = await response.arrayBuffer();
                 workbook = XLSX.read(arrayBuffer);
@@ -166,16 +188,21 @@
                 // Aktifkan kontrol
                 sheetSelect.disabled = false;
                 searchInput.disabled = false;
+                refreshBtn.style.display = 'block';
                 
                 // Muat sheet pertama secara default
-                loadSheet(workbook.SheetNames[0]);
+                if (workbook.SheetNames.length > 0) {
+                    loadSheet(workbook.SheetNames[0]);
+                } else {
+                    throw new Error("Tidak ada sheet yang ditemukan dalam file Excel");
+                }
                 
             } catch (error) {
                 console.error("Error:", error);
                 dataContainer.innerHTML = `
                     <div class="error">
                         ❌ Gagal memuat file. Pastikan:<br>
-                        1. File Excel tersedia di GitHub<br>
+                        1. File Excel tersedia di <a href="${EXCEL_URL}" target="_blank">GitHub</a><br>
                         2. Repository bersifat public<br>
                         3. Koneksi internet stabil<br>
                         <br>Detail error: ${error.message}
@@ -189,21 +216,31 @@
         // Memuat data sheet
         function loadSheet(sheetName) {
             loadingIndicator.style.display = 'block';
-            loadingIndicator.textContent = "📊 Memproses sheet " + sheetName + "...";
+            loadingIndicator.textContent = `📊 Memproses sheet ${sheetName}...`;
+            dataContainer.innerHTML = '';
             
             setTimeout(() => {
                 try {
                     const worksheet = workbook.Sheets[sheetName];
                     currentData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
                     
+                    if (currentData.length === 0) {
+                        throw new Error("Sheet kosong atau tidak berisi data");
+                    }
+                    
                     // Format kolom angka ke Rupiah (otomatis deteksi kolom berisi angka)
-                    if (currentData.length > 0) {
-                        const numericColumns = Object.keys(currentData[0]).filter(key => 
-                            !isNaN(currentData[0][key]) && currentData[0][key] !== "");
+                    const firstRow = currentData[0];
+                    if (firstRow) {
+                        const numericColumns = Object.keys(firstRow).filter(key => {
+                            const value = firstRow[key];
+                            return !isNaN(value) && value !== "" && value !== null;
+                        });
                         
                         currentData.forEach(row => {
                             numericColumns.forEach(col => {
-                                if (row[col]) row[col] = formatRupiah(row[col]);
+                                if (row[col] !== undefined && row[col] !== "") {
+                                    row[col] = formatRupiah(row[col]);
+                                }
                             });
                         });
                     }
@@ -211,7 +248,12 @@
                     displayData(currentData);
                 } catch (error) {
                     console.error("Error processing sheet:", error);
-                    dataContainer.innerHTML = `<div class="error">Error memproses sheet: ${error.message}</div>`;
+                    dataContainer.innerHTML = `
+                        <div class="error">
+                            ❌ Gagal memproses sheet "${sheetName}"<br>
+                            ${error.message}
+                        </div>
+                    `;
                 } finally {
                     loadingIndicator.style.display = 'none';
                 }
@@ -252,6 +294,11 @@
         
         searchInput.addEventListener('input', (e) => {
             const keyword = e.target.value.toLowerCase();
+            if (!keyword) {
+                displayData(currentData);
+                return;
+            }
+            
             const filteredData = currentData.filter(row =>
                 Object.values(row).some(val =>
                     String(val).toLowerCase().includes(keyword)
@@ -259,6 +306,8 @@
             );
             displayData(filteredData);
         });
+        
+        refreshBtn.addEventListener('click', loadExcel);
         
         // Jalankan saat halaman dimuat
         window.addEventListener('DOMContentLoaded', loadExcel);
