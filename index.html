@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rekap Insentif Delivery</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f7fa;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 15px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 5px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #7f8c8d;
+            margin-bottom: 30px;
+        }
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        .control-group {
+            flex: 1;
+            min-width: 200px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        select, input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        #loading {
+            text-align: center;
+            padding: 20px;
+            color: #3498db;
+            font-style: italic;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        th, td {
+            padding: 12px 15px;
+            border: 1px solid #e0e0e0;
+            text-align: left;
+        }
+        th {
+            background-color: #3498db;
+            color: white;
+            position: sticky;
+            top: 0;
+        }
+        tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+        tr:hover {
+            background-color: #f1f5f9;
+        }
+        .error {
+            color: #e74c3c;
+            text-align: center;
+            padding: 20px;
+            font-weight: bold;
+        }
+        @media (max-width: 768px) {
+            .controls {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>REKAP INSENTIF DELIVERY DC PKY 05</h1>
+        <p class="subtitle">Data per 1-30 Juni 2025 | Sumber: Jambu</p>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label for="sheetSelect">Pilih Sheet:</label>
+                <select id="sheetSelect" disabled>
+                    <option value="">-- Memuat data --</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="searchInput">Cari Data:</label>
+                <input type="text" id="searchInput" placeholder="Cari nama/nomor..." disabled>
+            </div>
+        </div>
+        
+        <div id="loading">⏳ Memuat data dari Jambu...</div>
+        <div id="dataContainer"></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script>
+        // URL file Excel Anda di GitHub (RAW URL)
+        const EXCEL_URL = "https://github.com/jambu123412/data/raw/main/REKAP%20INSENTIF%20DELIVERY%201-30%20JUNI%202025.xlsx";
+        
+        // Variabel global
+        let workbook = null;
+        let currentData = [];
+        
+        // Elemen DOM
+        const sheetSelect = document.getElementById('sheetSelect');
+        const searchInput = document.getElementById('searchInput');
+        const dataContainer = document.getElementById('dataContainer');
+        const loadingIndicator = document.getElementById('loading');
+        
+        // Format angka ke Rupiah
+        function formatRupiah(angka) {
+            if (!angka) return '-';
+            return new Intl.NumberFormat('id-ID', {
+                style: 'currency',
+                currency: 'IDR',
+                minimumFractionDigits: 0
+            }).format(angka);
+        }
+        
+        // Memuat file Excel dari GitHub
+        async function loadExcel() {
+            try {
+                loadingIndicator.textContent = "⏳ Memuat data dari Jambujua...";
+                
+                // Fetch file Excel
+                const response = await fetch(EXCEL_URL);
+                if (!response.ok) throw new Error("Gagal mengambil file");
+                
+                const arrayBuffer = await response.arrayBuffer();
+                workbook = XLSX.read(arrayBuffer);
+                
+                // Isi dropdown sheet
+                sheetSelect.innerHTML = workbook.SheetNames.map(sheet => 
+                    `<option value="${sheet}">${sheet}</option>`
+                ).join('');
+                
+                // Aktifkan kontrol
+                sheetSelect.disabled = false;
+                searchInput.disabled = false;
+                
+                // Muat sheet pertama secara default
+                loadSheet(workbook.SheetNames[0]);
+                
+            } catch (error) {
+                console.error("Error:", error);
+                dataContainer.innerHTML = `
+                    <div class="error">
+                        ❌ Gagal memuat file. Pastikan:<br>
+                        1. File Excel tersedia di GitHub<br>
+                        2. Repository bersifat public<br>
+                        3. Koneksi internet stabil<br>
+                        <br>Detail error: ${error.message}
+                    </div>
+                `;
+            } finally {
+                loadingIndicator.style.display = 'none';
+            }
+        }
+        
+        // Memuat data sheet
+        function loadSheet(sheetName) {
+            loadingIndicator.style.display = 'block';
+            loadingIndicator.textContent = "📊 Memproses sheet " + sheetName + "...";
+            
+            setTimeout(() => {
+                try {
+                    const worksheet = workbook.Sheets[sheetName];
+                    currentData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+                    
+                    // Format kolom angka ke Rupiah (otomatis deteksi kolom berisi angka)
+                    if (currentData.length > 0) {
+                        const numericColumns = Object.keys(currentData[0]).filter(key => 
+                            !isNaN(currentData[0][key]) && currentData[0][key] !== "");
+                        
+                        currentData.forEach(row => {
+                            numericColumns.forEach(col => {
+                                if (row[col]) row[col] = formatRupiah(row[col]);
+                            });
+                        });
+                    }
+                    
+                    displayData(currentData);
+                } catch (error) {
+                    console.error("Error processing sheet:", error);
+                    dataContainer.innerHTML = `<div class="error">Error memproses sheet: ${error.message}</div>`;
+                } finally {
+                    loadingIndicator.style.display = 'none';
+                }
+            }, 100);
+        }
+        
+        // Menampilkan data dalam tabel
+        function displayData(data) {
+            if (!data || data.length === 0) {
+                dataContainer.innerHTML = "<p>Tidak ada data di sheet ini.</p>";
+                return;
+            }
+            
+            const headers = Object.keys(data[0]);
+            const tableHTML = `
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
+                        </thead>
+                        <tbody>
+                            ${data.map(row => `
+                                <tr>
+                                    ${headers.map(h => `<td>${row[h] || '-'}</td>`).join('')}
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                <p class="data-count">Total data: ${data.length} record</p>
+            `;
+            
+            dataContainer.innerHTML = tableHTML;
+        }
+        
+        // Event listeners
+        sheetSelect.addEventListener('change', (e) => loadSheet(e.target.value));
+        
+        searchInput.addEventListener('input', (e) => {
+            const keyword = e.target.value.toLowerCase();
+            const filteredData = currentData.filter(row =>
+                Object.values(row).some(val =>
+                    String(val).toLowerCase().includes(keyword)
+                )
+            );
+            displayData(filteredData);
+        });
+        
+        // Jalankan saat halaman dimuat
+        window.addEventListener('DOMContentLoaded', loadExcel);
+    </script>
+</body>
+</html>
